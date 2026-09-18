@@ -1,0 +1,515 @@
+{
+  "name": "AMRL — Client onboarding V1",
+  "flow": [
+    {
+      "id": 1,
+      "module": "gateway:CustomWebHook",
+      "version": 1,
+      "parameters": {
+        "hook": 0,
+        "maxResults": 1
+      },
+      "mapper": {},
+      "metadata": {
+        "designer": { "x": 0, "y": 0, "name": "1 · Form submission" },
+        "restore": { "parameters": { "hook": { "label": "amrl-client-intake" } } },
+        "parameters": [
+          { "name": "hook", "type": "hook:gateway-webhook", "label": "Webhook", "required": true },
+          { "name": "maxResults", "type": "number", "label": "Maximum number of results" }
+        ],
+        "interface": [
+          { "name": "contactName", "type": "text", "label": "Contact name" },
+          { "name": "company", "type": "text", "label": "Company" },
+          { "name": "email", "type": "text", "label": "Email" },
+          { "name": "phone", "type": "text", "label": "Phone" },
+          { "name": "projectType", "type": "text", "label": "Project type" },
+          { "name": "budgetGbp", "type": "number", "label": "Budget (GBP)" },
+          { "name": "deadline", "type": "date", "label": "Deadline" },
+          { "name": "brief", "type": "text", "label": "Brief" },
+          { "name": "heardAbout", "type": "text", "label": "Heard about us" }
+        ]
+      }
+    },
+    {
+      "id": 2,
+      "module": "util:SetVariables",
+      "version": 1,
+      "parameters": {},
+      "mapper": {
+        "variables": [
+          { "name": "spreadsheetId", "value": "PUT_YOUR_SPREADSHEET_ID_HERE" },
+          { "name": "driveParentFolderId", "value": "PUT_YOUR_CLIENTS_FOLDER_ID_HERE" },
+          { "name": "alertTo", "value": "studio@amrl.example" },
+          { "name": "alertCc", "value": "accounts@amrl.example" },
+          { "name": "roster", "value": "Nadia,Joel,Priya" },
+          { "name": "submittedAt", "value": "{{formatDate(now; \"YYYY-MM-DDTHH:mm:ss[Z]\"; \"UTC\")}}" },
+          { "name": "depositDue", "value": "{{formatDate(addDays(now; 7); \"YYYY-MM-DD\"; \"UTC\")}}" },
+          { "name": "depositAmount", "value": "{{round(1.budgetGbp * 0.5)}}" }
+        ],
+        "scope": "roundtrip"
+      },
+      "metadata": {
+        "designer": { "x": 300, "y": 0, "name": "2 · Settings" },
+        "restore": { "expect": { "scope": { "label": "One cycle" } } },
+        "expect": [
+          {
+            "name": "variables",
+            "type": "array",
+            "label": "Variables",
+            "spec": [
+              { "name": "name", "type": "text", "label": "Variable name", "required": true },
+              { "name": "value", "type": "any", "label": "Variable value" }
+            ]
+          },
+          {
+            "name": "scope",
+            "type": "select",
+            "label": "Variable lifetime",
+            "validate": { "enum": ["roundtrip", "execution"] }
+          }
+        ]
+      }
+    },
+    {
+      "id": 3,
+      "module": "builtin:BasicRouter",
+      "version": 1,
+      "mapper": null,
+      "metadata": {
+        "designer": { "x": 600, "y": 0, "name": "3 · Is it usable?" }
+      },
+      "routes": [
+        {
+          "flow": [
+            {
+              "id": 4,
+              "module": "google-sheets:searchRows",
+              "version": 2,
+              "parameters": { "__IMTCONN__": 0 },
+              "filter": {
+                "name": "Valid submission",
+                "conditions": [
+                  [
+                    { "a": "{{1.contactName}}", "b": "", "o": "text:notequal" },
+                    { "a": "{{1.company}}", "b": "", "o": "text:notequal" },
+                    { "a": "{{1.email}}", "b": "", "o": "email:exists" },
+                    { "a": "{{1.budgetGbp}}", "b": "500", "o": "number:greaterorequal" },
+                    { "a": "{{length(1.brief)}}", "b": "20", "o": "number:greaterorequal" }
+                  ]
+                ]
+              },
+              "mapper": {
+                "from": "drive",
+                "mode": "select",
+                "sheetId": "Clients",
+                "spreadsheetId": "{{2.spreadsheetId}}",
+                "includesHeaders": true,
+                "limit": "1000",
+                "order": "asc",
+                "valueRenderOption": "FORMATTED_VALUE",
+                "dateTimeRenderOption": "FORMATTED_STRING"
+              },
+              "metadata": {
+                "designer": { "x": 900, "y": -150, "name": "4 · Read the tracker" },
+                "restore": { "parameters": { "__IMTCONN__": { "label": "Your Google connection" } } },
+                "parameters": [
+                  { "name": "__IMTCONN__", "type": "account:google", "label": "Connection", "required": true }
+                ]
+              },
+              "onerror": [
+                {
+                  "id": 41,
+                  "module": "builtin:Break",
+                  "version": 1,
+                  "mapper": { "retry": true, "count": 3, "interval": 5 },
+                  "metadata": { "designer": { "x": 900, "y": 150, "name": "Retry, then park it" } }
+                }
+              ]
+            },
+            {
+              "id": 5,
+              "module": "util:FunctionParseJSON",
+              "version": 1,
+              "parameters": {},
+              "mapper": {
+                "json": "{{ { \"clientId\": \"AMRL-\" + substring(\"0000\" + (parseNumber(substring(get(map(4.array; \"Client ID\"); length(map(4.array; \"Client ID\")))); 6; 10)) + 1; length(\"0000\" + ((parseNumber(substring(get(map(4.array; \"Client ID\"); length(map(4.array; \"Client ID\")))); 6; 10)) + 1)) - 4) } }}"
+              },
+              "metadata": {
+                "designer": { "x": 1200, "y": -150, "name": "5 · Assign a client ID" },
+                "expect": [{ "name": "json", "type": "text", "label": "JSON string", "required": true }],
+                "notes": "Takes the highest existing ID and adds one, so a manually deleted row cannot cause an ID already on an invoice to be reused."
+              }
+            },
+            {
+              "id": 6,
+              "module": "google-sheets:addRow",
+              "version": 2,
+              "parameters": { "__IMTCONN__": 0 },
+              "mapper": {
+                "from": "drive",
+                "mode": "select",
+                "sheetId": "Clients",
+                "spreadsheetId": "{{2.spreadsheetId}}",
+                "includesHeaders": true,
+                "insertDataOption": "INSERT_ROWS",
+                "valueInputOption": "RAW",
+                "values": {
+                  "0": "{{5.clientId}}",
+                  "1": "{{2.submittedAt}}",
+                  "2": "{{1.contactName}}",
+                  "3": "{{1.company}}",
+                  "4": "{{lower(1.email)}}",
+                  "5": "{{1.phone}}",
+                  "6": "{{1.projectType}}",
+                  "7": "{{1.budgetGbp}}",
+                  "8": "{{1.deadline}}",
+                  "9": "{{1.brief}}",
+                  "10": "{{1.heardAbout}}",
+                  "11": "",
+                  "12": "New enquiry",
+                  "13": "Awaiting deposit",
+                  "14": "{{2.depositDue}}",
+                  "15": "0",
+                  "16": "Not started",
+                  "17": "",
+                  "18": "{{get(split(2.roster; \",\"); (length(1.projectType) % length(split(2.roster; \",\"))) + 1)}}",
+                  "19": "{{2.submittedAt}}",
+                  "20": ""
+                }
+              },
+              "metadata": {
+                "designer": { "x": 1500, "y": -150, "name": "6 · Add row to tracker" },
+                "restore": { "parameters": { "__IMTCONN__": { "label": "Your Google connection" } } },
+                "parameters": [
+                  { "name": "__IMTCONN__", "type": "account:google", "label": "Connection", "required": true }
+                ],
+                "notes": "valueInputOption is RAW on purpose: a brief starting with = or + would otherwise be read as a formula."
+              },
+              "onerror": [
+                {
+                  "id": 61,
+                  "module": "builtin:Break",
+                  "version": 1,
+                  "mapper": { "retry": true, "count": 3, "interval": 5 },
+                  "metadata": { "designer": { "x": 1500, "y": 150, "name": "Retry, then park it" } }
+                }
+              ]
+            },
+            {
+              "id": 7,
+              "module": "google-drive:createAFolder",
+              "version": 4,
+              "parameters": { "__IMTCONN__": 0 },
+              "mapper": {
+                "name": "{{5.clientId}} {{replace(1.company; \"/[\\\\/:*?\\\"<>|]/g\"; \"-\")}}",
+                "destination": "drive",
+                "folderId": "{{2.driveParentFolderId}}",
+                "select": "map"
+              },
+              "metadata": {
+                "designer": { "x": 1800, "y": -150, "name": "7 · Create client folder" },
+                "restore": { "parameters": { "__IMTCONN__": { "label": "Your Google connection" } } },
+                "parameters": [
+                  { "name": "__IMTCONN__", "type": "account:google", "label": "Connection", "required": true }
+                ]
+              },
+              "onerror": [
+                {
+                  "id": 71,
+                  "module": "builtin:Resume",
+                  "version": 1,
+                  "mapper": { "output": "{{ { \"id\": \"\", \"webViewLink\": \"\" } }}" },
+                  "metadata": {
+                    "designer": { "x": 1800, "y": 150, "name": "Carry on without a folder" },
+                    "notes": "Not fatal. The row is already written; a missing folder is a five-second fix, an invisible client is not."
+                  }
+                }
+              ]
+            },
+            {
+              "id": 8,
+              "module": "google-drive:createAFolder",
+              "version": 4,
+              "parameters": { "__IMTCONN__": 0 },
+              "filter": {
+                "name": "Only if the client folder exists",
+                "conditions": [[{ "a": "{{7.id}}", "b": "", "o": "text:notequal" }]]
+              },
+              "mapper": { "name": "01 Brief and contract", "destination": "drive", "folderId": "{{7.id}}", "select": "map" },
+              "metadata": {
+                "designer": { "x": 2100, "y": -150, "name": "8 · Subfolder 01" },
+                "restore": { "parameters": { "__IMTCONN__": { "label": "Your Google connection" } } },
+                "parameters": [
+                  { "name": "__IMTCONN__", "type": "account:google", "label": "Connection", "required": true }
+                ]
+              },
+              "onerror": [
+                {
+                  "id": 81,
+                  "module": "builtin:Resume",
+                  "version": 1,
+                  "mapper": { "output": "{{ { \"id\": \"\" } }}" },
+                  "metadata": { "designer": { "x": 2100, "y": 150, "name": "Skip it" } }
+                }
+              ]
+            },
+            {
+              "id": 9,
+              "module": "google-drive:createAFolder",
+              "version": 4,
+              "parameters": { "__IMTCONN__": 0 },
+              "filter": {
+                "name": "Only if the client folder exists",
+                "conditions": [[{ "a": "{{7.id}}", "b": "", "o": "text:notequal" }]]
+              },
+              "mapper": { "name": "02 Assets from client", "destination": "drive", "folderId": "{{7.id}}", "select": "map" },
+              "metadata": {
+                "designer": { "x": 2400, "y": -150, "name": "9 · Subfolder 02" },
+                "restore": { "parameters": { "__IMTCONN__": { "label": "Your Google connection" } } },
+                "parameters": [
+                  { "name": "__IMTCONN__", "type": "account:google", "label": "Connection", "required": true }
+                ]
+              },
+              "onerror": [
+                {
+                  "id": 91,
+                  "module": "builtin:Resume",
+                  "version": 1,
+                  "mapper": { "output": "{{ { \"id\": \"\" } }}" },
+                  "metadata": { "designer": { "x": 2400, "y": 150, "name": "Skip it" } }
+                }
+              ]
+            },
+            {
+              "id": 10,
+              "module": "google-drive:createAFolder",
+              "version": 4,
+              "parameters": { "__IMTCONN__": 0 },
+              "filter": {
+                "name": "Only if the client folder exists",
+                "conditions": [[{ "a": "{{7.id}}", "b": "", "o": "text:notequal" }]]
+              },
+              "mapper": { "name": "03 Work in progress", "destination": "drive", "folderId": "{{7.id}}", "select": "map" },
+              "metadata": {
+                "designer": { "x": 2700, "y": -150, "name": "10 · Subfolder 03" },
+                "restore": { "parameters": { "__IMTCONN__": { "label": "Your Google connection" } } },
+                "parameters": [
+                  { "name": "__IMTCONN__", "type": "account:google", "label": "Connection", "required": true }
+                ]
+              },
+              "onerror": [
+                {
+                  "id": 101,
+                  "module": "builtin:Resume",
+                  "version": 1,
+                  "mapper": { "output": "{{ { \"id\": \"\" } }}" },
+                  "metadata": { "designer": { "x": 2700, "y": 150, "name": "Skip it" } }
+                }
+              ]
+            },
+            {
+              "id": 11,
+              "module": "google-drive:createAFolder",
+              "version": 4,
+              "parameters": { "__IMTCONN__": 0 },
+              "filter": {
+                "name": "Only if the client folder exists",
+                "conditions": [[{ "a": "{{7.id}}", "b": "", "o": "text:notequal" }]]
+              },
+              "mapper": { "name": "04 Final delivery", "destination": "drive", "folderId": "{{7.id}}", "select": "map" },
+              "metadata": {
+                "designer": { "x": 3000, "y": -150, "name": "11 · Subfolder 04" },
+                "restore": { "parameters": { "__IMTCONN__": { "label": "Your Google connection" } } },
+                "parameters": [
+                  { "name": "__IMTCONN__", "type": "account:google", "label": "Connection", "required": true }
+                ]
+              },
+              "onerror": [
+                {
+                  "id": 111,
+                  "module": "builtin:Resume",
+                  "version": 1,
+                  "mapper": { "output": "{{ { \"id\": \"\" } }}" },
+                  "metadata": { "designer": { "x": 3000, "y": 150, "name": "Skip it" } }
+                }
+              ]
+            },
+            {
+              "id": 12,
+              "module": "google-sheets:updateRow",
+              "version": 2,
+              "parameters": { "__IMTCONN__": 0 },
+              "filter": {
+                "name": "Only if there is a link to write",
+                "conditions": [[{ "a": "{{7.webViewLink}}", "b": "", "o": "text:notequal" }]]
+              },
+              "mapper": {
+                "from": "drive",
+                "mode": "select",
+                "sheetId": "Clients",
+                "spreadsheetId": "{{2.spreadsheetId}}",
+                "includesHeaders": true,
+                "rowNumber": "{{6.__ROW_NUMBER__}}",
+                "valueInputOption": "RAW",
+                "values": { "11": "{{7.webViewLink}}" }
+              },
+              "metadata": {
+                "designer": { "x": 3300, "y": -150, "name": "12 · Write the folder link" },
+                "restore": { "parameters": { "__IMTCONN__": { "label": "Your Google connection" } } },
+                "parameters": [
+                  { "name": "__IMTCONN__", "type": "account:google", "label": "Connection", "required": true }
+                ],
+                "notes": "Column L is 'Drive folder'. Index 11, zero-based — see docs/DATA-MODEL.md."
+              },
+              "onerror": [
+                {
+                  "id": 121,
+                  "module": "builtin:Resume",
+                  "version": 1,
+                  "mapper": { "output": "{{ {} }}" },
+                  "metadata": { "designer": { "x": 3300, "y": 150, "name": "Carry on" } }
+                }
+              ]
+            },
+            {
+              "id": 13,
+              "module": "google-email:ActionSendEmail",
+              "version": 2,
+              "parameters": { "__IMTCONN__": 0 },
+              "mapper": {
+                "to": ["{{2.alertTo}}"],
+                "cc": ["{{2.alertCc}}"],
+                "replyTo": "{{lower(1.email)}}",
+                "subject": "New brief · {{1.company}} · {{1.projectType}} · £{{formatNumber(1.budgetGbp; 0; \",\"; \".\")}}",
+                "contentType": "text",
+                "text": "{{1.contactName}} at {{1.company}} has sent a brief.\n\nClient ID     {{5.clientId}}\nProject       {{1.projectType}}\nBudget        £{{formatNumber(1.budgetGbp; 0; \",\"; \".\")}}\nDeposit       £{{formatNumber(2.depositAmount; 0; \",\"; \".\")}} due {{2.depositDue}}\nDeadline      {{1.deadline}}\nContact       {{lower(1.email)}} · {{1.phone}}\n\nBrief\n{{1.brief}}\n\nFolder        {{if(7.webViewLink = \"\"; \"not created — see the Errors tab\"; 7.webViewLink)}}\n\nReply to this email to answer {{1.contactName}} directly.",
+                "attachments": []
+              },
+              "metadata": {
+                "designer": { "x": 3600, "y": -150, "name": "13 · Email the studio" },
+                "restore": { "parameters": { "__IMTCONN__": { "label": "Your Gmail connection" } } },
+                "parameters": [
+                  { "name": "__IMTCONN__", "type": "account:google-email", "label": "Connection", "required": true }
+                ],
+                "notes": "Reply-To is the client, so hitting reply answers them rather than the studio."
+              },
+              "onerror": [
+                {
+                  "id": 131,
+                  "module": "google-sheets:addRow",
+                  "version": 2,
+                  "parameters": { "__IMTCONN__": 0 },
+                  "mapper": {
+                    "from": "drive",
+                    "mode": "select",
+                    "sheetId": "Errors",
+                    "spreadsheetId": "{{2.spreadsheetId}}",
+                    "includesHeaders": true,
+                    "insertDataOption": "INSERT_ROWS",
+                    "valueInputOption": "RAW",
+                    "values": {
+                      "0": "{{2.submittedAt}}",
+                      "1": "{{5.clientId}}",
+                      "2": "Email the studio",
+                      "3": "Module 13",
+                      "4": "1",
+                      "5": "gmail.error",
+                      "6": "The alert email did not send.",
+                      "7": "Reconnect the Gmail connection, then email the studio by hand. The client is already on the tracker."
+                    }
+                  },
+                  "metadata": {
+                    "designer": { "x": 3600, "y": 150, "name": "Log it and carry on" },
+                    "restore": { "parameters": { "__IMTCONN__": { "label": "Your Google connection" } } },
+                    "parameters": [
+                      { "name": "__IMTCONN__", "type": "account:google", "label": "Connection", "required": true }
+                    ]
+                  }
+                }
+              ]
+            },
+            {
+              "id": 14,
+              "module": "gateway:WebhookRespond",
+              "version": 1,
+              "parameters": {},
+              "mapper": {
+                "status": "200",
+                "body": "{{ { \"ok\": true, \"clientId\": 5.clientId, \"message\": \"Thanks — we have your brief and will be in touch within one working day.\" } }}",
+                "headers": [{ "key": "Content-Type", "value": "application/json" }]
+              },
+              "metadata": {
+                "designer": { "x": 3900, "y": -150, "name": "14 · Confirm to the client" },
+                "expect": [
+                  { "name": "status", "type": "uinteger", "label": "Status", "required": true },
+                  { "name": "body", "type": "any", "label": "Body" },
+                  { "name": "headers", "type": "array", "label": "Custom headers" }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "flow": [
+            {
+              "id": 15,
+              "module": "gateway:WebhookRespond",
+              "version": 1,
+              "parameters": {},
+              "mapper": {
+                "status": "400",
+                "body": "{{ { \"ok\": false, \"error\": \"That submission is not valid\" } }}",
+                "headers": [{ "key": "Content-Type", "value": "application/json" }]
+              },
+              "metadata": {
+                "designer": { "x": 900, "y": 300, "name": "15 · Reject the submission" },
+                "expect": [
+                  { "name": "status", "type": "uinteger", "label": "Status", "required": true },
+                  { "name": "body", "type": "any", "label": "Body" },
+                  { "name": "headers", "type": "array", "label": "Custom headers" }
+                ],
+                "notes": "The fallback route. Nothing is written anywhere, so the client can safely submit again."
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "instant": true,
+    "version": 1,
+    "scenario": {
+      "roundtrips": 1,
+      "maxErrors": 3,
+      "autoCommit": true,
+      "autoCommitTriggerLast": true,
+      "sequential": true,
+      "slots": null,
+      "confidential": false,
+      "dataloss": false,
+      "dlq": true,
+      "freshVariables": false
+    },
+    "designer": { "orphans": [] },
+    "zone": "eu2.make.com",
+    "notes": [
+      {
+        "moduleIds": [1],
+        "content": "Point your form at this webhook URL. Any form that can POST JSON works — Tally, Typeform, Fillout, a Webflow form, or a plain HTML form."
+      },
+      {
+        "moduleIds": [2],
+        "content": "The only module you edit. Everything downstream reads these four values."
+      },
+      {
+        "moduleIds": [6],
+        "content": "The step that must not be lost. If this fails the scenario stops and the client is told to try again, because nothing has been written yet."
+      },
+      {
+        "moduleIds": [7, 8, 9, 10, 11, 12, 13],
+        "content": "Everything from here has an error handler that lets the scenario carry on. The row is already in the Sheet, so a Drive or Gmail outage degrades the onboarding rather than cancelling it."
+      }
+    ]
+  }
+}
