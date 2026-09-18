@@ -1,0 +1,404 @@
+{
+  "name": "AMRL — Client onboarding V1",
+  "nodes": [
+    {
+      "id": "a1000000-0000-4000-8000-000000000001",
+      "name": "Section: Client onboarding",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-60, -420],
+      "parameters": {
+        "content": "## Client onboarding V1\nForm → Sheet row → Drive folder → Gmail alert.\n\nRead left to right. Every node maps to one step in the reference implementation at github.com/uusammmaa/client-onboarding-automation, and to one module in make/blueprint.json.\n\n**Before you run it:** set the four values in *Settings* (node 2), and connect the Google and Gmail credentials on nodes 4, 5, 7, 8, 9 and 10.",
+        "height": 1080,
+        "width": 2760,
+        "color": 4
+      }
+    },
+    {
+      "id": "a1000000-0000-4000-8000-000000000002",
+      "name": "Note: the row is what matters",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1180, 160],
+      "parameters": {
+        "content": "### From here on, failures do not stop the run\nThe Sheet row already exists, so the client is on the tracker.\n\nDrive and Gmail nodes are set to **continue using the error output**. A Drive outage leaves a client with no folder — a five-second fix. Rolling the row back would leave a client nobody knows about.",
+        "height": 300,
+        "width": 420,
+        "color": 3
+      }
+    },
+    {
+      "id": "b1000000-0000-4000-8000-000000000001",
+      "name": "Form submission",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [20, -120],
+      "webhookId": "amrl-client-intake",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "amrl-client-intake",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "b1000000-0000-4000-8000-000000000002",
+      "name": "Settings",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [240, -120],
+      "parameters": {
+        "mode": "manual",
+        "includeOtherFields": true,
+        "assignments": {
+          "assignments": [
+            {
+              "id": "s1",
+              "name": "cfg.spreadsheetId",
+              "type": "string",
+              "value": "PUT_YOUR_SPREADSHEET_ID_HERE"
+            },
+            {
+              "id": "s2",
+              "name": "cfg.driveParentFolderId",
+              "type": "string",
+              "value": "PUT_YOUR_CLIENTS_FOLDER_ID_HERE"
+            },
+            {
+              "id": "s3",
+              "name": "cfg.alertTo",
+              "type": "string",
+              "value": "studio@amrl.example"
+            },
+            {
+              "id": "s4",
+              "name": "cfg.roster",
+              "type": "string",
+              "value": "Nadia,Joel,Priya"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "notes": "The only node you edit to point this at a different account."
+    },
+    {
+      "id": "b1000000-0000-4000-8000-000000000003",
+      "name": "Validate the submission",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, -120],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Step 1 of 7 — reject an incomplete brief before anything is written anywhere.\n// Mirrors intakeSchema in src/lib/model.ts. Keep the two in step.\nconst body = $json.body ?? $json;\nconst problems = [];\n\nconst text = (value) => (typeof value === 'string' ? value.trim() : '');\nconst contactName = text(body.contactName);\nconst company = text(body.company);\nconst email = text(body.email).toLowerCase();\nconst phone = text(body.phone);\nconst brief = text(body.brief);\nconst projectType = text(body.projectType);\nconst deadline = text(body.deadline);\nconst budgetGbp = Number(body.budgetGbp);\n\nconst PROJECT_TYPES = ['Brand film', 'Social campaign', 'Photography', 'Website', 'Event coverage', 'Retainer'];\n\nif (contactName.length < 2) problems.push('contactName: give us a name we can use');\nif (company.length < 2) problems.push('company: which company is this for?');\nif (!/^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email)) problems.push('email: that email address does not look right');\nif (phone && !/^(?:\\+44\\s?|0)(?:\\d\\s?-?){9,10}$/.test(phone)) problems.push('phone: use a UK number');\nif (!PROJECT_TYPES.includes(projectType)) problems.push('projectType: not one of the options');\nif (!Number.isInteger(budgetGbp) || budgetGbp < 500 || budgetGbp > 500000) problems.push('budgetGbp: between 500 and 500000');\nif (!/^\\d{4}-\\d{2}-\\d{2}$/.test(deadline) || Number.isNaN(Date.parse(deadline))) problems.push('deadline: use a real date');\nif (brief.length < 20) problems.push('brief: at least a sentence or two');\n\nreturn {\n  json: {\n    ...$json,\n    valid: problems.length === 0,\n    problems,\n    intake: { contactName, company, email, phone, projectType, budgetGbp, deadline, brief, heardAbout: text(body.heardAbout) },\n  },\n};"
+      }
+    },
+    {
+      "id": "b1000000-0000-4000-8000-000000000004",
+      "name": "Is it usable?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [680, -120],
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict", "version": 2 },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "c1",
+              "operator": { "type": "boolean", "operation": "true", "singleValue": true },
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": ""
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "b1000000-0000-4000-8000-000000000005",
+      "name": "Reject with the reasons",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [900, 80],
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 400,
+        "responseBody": "={{ JSON.stringify({ ok: false, error: 'That submission is not valid', problems: $json.problems }) }}",
+        "options": {}
+      },
+      "notes": "400, with the field names. The form should have caught these."
+    },
+    {
+      "id": "b1000000-0000-4000-8000-000000000006",
+      "name": "Read the tracker",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [900, -220],
+      "parameters": {
+        "documentId": { "__rl": true, "value": "={{ $('Settings').first().json.cfg.spreadsheetId }}", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Clients", "mode": "name" },
+        "options": {}
+      },
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "notes": "Needed to work out the next client ID. alwaysOutputData is on so an empty tracker still produces an item."
+    },
+    {
+      "id": "b1000000-0000-4000-8000-000000000007",
+      "name": "Assign a client ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, -220],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Step 2 of 7 — next ID in sequence, plus the fields the tracker needs.\n// The sequence comes from the highest ID present, not the row count: a manually\n// deleted row must not cause the next client to reuse an ID that is on an invoice.\nconst cfg = $('Settings').first().json.cfg;\nconst intake = $('Validate the submission').first().json.intake;\nconst rows = $input.all().map((item) => item.json).filter((row) => row['Client ID']);\n\nlet highest = 0;\nfor (const row of rows) {\n  const match = String(row['Client ID']).match(/(\\d+)$/);\n  if (match) highest = Math.max(highest, Number(match[1]));\n}\n\nconst clientId = 'AMRL-' + String(highest + 1).padStart(4, '0');\nconst now = new Date();\nconst submittedAt = now.toISOString();\nconst depositDue = new Date(now.getTime() + 7 * 86400000).toISOString().slice(0, 10);\n\n// Round-robin by project type, so a brief always has a name on it.\nconst roster = String(cfg.roster || '').split(',').map((s) => s.trim()).filter(Boolean);\nlet hash = 0;\nfor (const ch of intake.projectType) hash = (hash * 31 + ch.charCodeAt(0)) | 0;\nconst owner = roster.length ? roster[Math.abs(hash) % roster.length] : 'Unassigned';\n\nconst folderName = (clientId + ' ' + intake.company).replace(/[\\\\/:*?\"<>|]/g, '-').slice(0, 120);\n\nreturn [{\n  json: {\n    cfg,\n    clientId,\n    folderName,\n    depositAmountGbp: Math.round(intake.budgetGbp * 0.5),\n    row: {\n      'Client ID': clientId,\n      Submitted: submittedAt,\n      Contact: intake.contactName,\n      Company: intake.company,\n      Email: intake.email,\n      Phone: intake.phone,\n      'Project type': intake.projectType,\n      'Budget (GBP)': intake.budgetGbp,\n      Deadline: intake.deadline,\n      Brief: intake.brief,\n      'Heard about us': intake.heardAbout,\n      'Drive folder': '',\n      Status: 'New enquiry',\n      Payment: 'Awaiting deposit',\n      'Deposit due': depositDue,\n      'Paid (GBP)': 0,\n      Delivery: 'Not started',\n      Delivered: '',\n      Owner: owner,\n      'Last updated': submittedAt,\n      Notes: '',\n    },\n  },\n}];"
+      }
+    },
+    {
+      "id": "b1000000-0000-4000-8000-000000000008",
+      "name": "Add row to tracker",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [1340, -220],
+      "parameters": {
+        "operation": "append",
+        "documentId": { "__rl": true, "value": "={{ $json.cfg.spreadsheetId }}", "mode": "id" },
+        "sheetName": { "__rl": true, "value": "Clients", "mode": "name" },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": "={{ $json.row }}",
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": { "useAppend": true }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "notes": "THE step that must not be lost. Retries three times; a failure here stops the run and the client is told to try again."
+    },
+    {
+      "id": "b1000000-0000-4000-8000-000000000009",
+      "name": "Create client folder",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1560, -220],
+      "parameters": {
+        "resource": "folder",
+        "name": "={{ $('Assign a client ID').first().json.folderName }}",
+        "driveId": { "__rl": true, "value": "My Drive", "mode": "list" },
+        "folderId": {
+          "__rl": true,
+          "value": "={{ $('Assign a client ID').first().json.cfg.driveParentFolderId }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueErrorOutput",
+      "notes": "Not fatal. A client with a row and no folder is a five-second fix."
+    },
+    {
+      "id": "b1000000-0000-4000-8000-000000000010",
+      "name": "List the subfolders",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1780, -320],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// One item per subfolder. The next node runs once per item, so adding a name here\n// is the whole of 'add another subfolder' — no extra nodes to wire up.\nconst parentId = $json.id;\nreturn [\n  '01 Brief and contract',\n  '02 Assets from client',\n  '03 Work in progress',\n  '04 Final delivery',\n].map((name) => ({ json: { name, parentId } }));"
+      }
+    },
+    {
+      "id": "b1000000-0000-4000-8000-000000000011",
+      "name": "Create subfolders",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [2000, -320],
+      "parameters": {
+        "resource": "folder",
+        "name": "={{ $json.name }}",
+        "driveId": { "__rl": true, "value": "My Drive", "mode": "list" },
+        "folderId": { "__rl": true, "value": "={{ $json.parentId }}", "mode": "id" },
+        "options": {}
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput",
+      "notes": "Runs once per item from the previous node."
+    },
+    {
+      "id": "b1000000-0000-4000-8000-000000000012",
+      "name": "Write the folder link",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [2220, -220],
+      "parameters": {
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Assign a client ID').first().json.cfg.spreadsheetId }}",
+          "mode": "id"
+        },
+        "sheetName": { "__rl": true, "value": "Clients", "mode": "name" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": ["Client ID"],
+          "value": {
+            "Client ID": "={{ $('Assign a client ID').first().json.clientId }}",
+            "Drive folder": "={{ $('Create client folder').first().json.webViewLink }}"
+          },
+          "schema": []
+        },
+        "options": {}
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput",
+      "notes": "Matches on Client ID, so it is safe to re-run."
+    },
+    {
+      "id": "b1000000-0000-4000-8000-000000000013",
+      "name": "Email the studio",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [2440, -220],
+      "parameters": {
+        "sendTo": "={{ $('Assign a client ID').first().json.cfg.alertTo }}",
+        "subject": "=New brief · {{ $('Assign a client ID').first().json.row.Company }} · {{ $('Assign a client ID').first().json.row['Project type'] }} · £{{ $('Assign a client ID').first().json.row['Budget (GBP)'] }}",
+        "emailType": "text",
+        "message": "={{ (() => {\n  const d = $('Assign a client ID').first().json;\n  const r = d.row;\n  const folder = $('Create client folder').first()?.json?.webViewLink ?? 'not created — see the Errors tab';\n  return [\n    r.Contact + ' at ' + r.Company + ' has sent a brief.',\n    '',\n    'Client ID     ' + r['Client ID'],\n    'Project       ' + r['Project type'],\n    'Budget        £' + r['Budget (GBP)'],\n    'Deposit       £' + d.depositAmountGbp + ' due ' + r['Deposit due'],\n    'Deadline      ' + r.Deadline,\n    'Owner         ' + r.Owner,\n    'Contact       ' + r.Email + (r.Phone ? ' · ' + r.Phone : ''),\n    '',\n    'Brief',\n    r.Brief,\n    '',\n    'Folder        ' + folder,\n    '',\n    'Reply to this email to answer ' + r.Contact + ' directly.'\n  ].join('\\n');\n})() }}",
+        "options": { "replyTo": "={{ $('Assign a client ID').first().json.row.Email }}" }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "onError": "continueErrorOutput",
+      "notes": "Reply-To is the client, so hitting reply answers them rather than the studio."
+    },
+    {
+      "id": "b1000000-0000-4000-8000-000000000014",
+      "name": "Confirm to the client",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2660, -220],
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 200,
+        "responseBody": "={{ JSON.stringify({ ok: true, clientId: $('Assign a client ID').first().json.clientId, message: 'Thanks — we have your brief and will be in touch within one working day.' }) }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000001",
+      "name": "Log the failure",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [2000, 60],
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "={{ $('Assign a client ID').first().json.cfg.spreadsheetId }}",
+          "mode": "id"
+        },
+        "sheetName": { "__rl": true, "value": "Errors", "mode": "name" },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "When": "={{ $now.toISO() }}",
+            "Client ID": "={{ $('Assign a client ID').first().json.clientId }}",
+            "Step": "={{ $json.error?.node?.name ?? 'unknown' }}",
+            "Message": "={{ $json.error?.message ?? JSON.stringify($json) }}",
+            "What to do": "Check the node's credentials and the IDs in Settings, then re-run this execution from the failed node."
+          },
+          "schema": []
+        },
+        "options": {}
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 2000,
+      "onError": "continueRegularOutput",
+      "notes": "Best effort. If the Sheet is what is broken, this fails too — which is why the email below does not depend on it."
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000002",
+      "name": "Tell someone",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [2220, 60],
+      "parameters": {
+        "sendTo": "={{ $('Settings').first().json.cfg.alertTo }}",
+        "subject": "=Onboarding step failed · {{ $('Assign a client ID').first().json.clientId }}",
+        "emailType": "text",
+        "message": "=A step in the client onboarding workflow failed.\n\nClient   {{ $('Assign a client ID').first().json.clientId }} — {{ $('Assign a client ID').first().json.row.Company }}\nStep     {{ $json.error?.node?.name ?? 'unknown' }}\nError    {{ $json.error?.message ?? 'see the execution log' }}\n\nThe tracker row was written, so the client is not lost. Finish the step by hand, or open the execution in n8n and retry from the node that failed.",
+        "options": {}
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000003",
+      "name": "Still confirm to the client",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2440, 60],
+      "parameters": {
+        "respondWith": "json",
+        "responseCode": 200,
+        "responseBody": "={{ JSON.stringify({ ok: true, clientId: $('Assign a client ID').first().json.clientId, message: 'Thanks — we have your brief and will be in touch within one working day.' }) }}",
+        "options": {}
+      },
+      "notes": "The client's brief was saved. What failed is internal, so they get the same confirmation."
+    }
+  ],
+  "connections": {
+    "Form submission": { "main": [[{ "node": "Settings", "type": "main", "index": 0 }]] },
+    "Settings": { "main": [[{ "node": "Validate the submission", "type": "main", "index": 0 }]] },
+    "Validate the submission": { "main": [[{ "node": "Is it usable?", "type": "main", "index": 0 }]] },
+    "Is it usable?": {
+      "main": [
+        [{ "node": "Read the tracker", "type": "main", "index": 0 }],
+        [{ "node": "Reject with the reasons", "type": "main", "index": 0 }]
+      ]
+    },
+    "Read the tracker": { "main": [[{ "node": "Assign a client ID", "type": "main", "index": 0 }]] },
+    "Assign a client ID": { "main": [[{ "node": "Add row to tracker", "type": "main", "index": 0 }]] },
+    "Add row to tracker": { "main": [[{ "node": "Create client folder", "type": "main", "index": 0 }]] },
+    "Create client folder": {
+      "main": [
+        [{ "node": "List the subfolders", "type": "main", "index": 0 }],
+        [{ "node": "Log the failure", "type": "main", "index": 0 }]
+      ]
+    },
+    "List the subfolders": { "main": [[{ "node": "Create subfolders", "type": "main", "index": 0 }]] },
+    "Create subfolders": { "main": [[{ "node": "Write the folder link", "type": "main", "index": 0 }]] },
+    "Write the folder link": { "main": [[{ "node": "Email the studio", "type": "main", "index": 0 }]] },
+    "Email the studio": {
+      "main": [
+        [{ "node": "Confirm to the client", "type": "main", "index": 0 }],
+        [{ "node": "Log the failure", "type": "main", "index": 0 }]
+      ]
+    },
+    "Log the failure": { "main": [[{ "node": "Tell someone", "type": "main", "index": 0 }]] },
+    "Tell someone": { "main": [[{ "node": "Still confirm to the client", "type": "main", "index": 0 }]] }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all",
+    "executionTimeout": 120
+  },
+  "pinData": {}
+}
