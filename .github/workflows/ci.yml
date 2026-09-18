@@ -23,8 +23,8 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run test
-      - name: Eval report
-        run: npx tsx src/evals/report.ts
+      - name: Validate the exported workflows
+        run: npm run validate:workflows
 
   build:
     name: production build
